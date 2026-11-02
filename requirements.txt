@@ -1,5 +1,7 @@
-pandas
+pandas>=2.2
 openpyxl
+python-calamine
+pyarrow
 sqlalchemy
 psycopg2-binary
 python-dotenv
