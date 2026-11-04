@@ -34,7 +34,7 @@ An LCA is an employer filing, not an approved H-1B petition. Informational only,
 | employer_state | DOL | text | Employer HQ state. |
 | naics_code | DOL | text | Employer industry code (NAICS). |
 | job_title | DOL | text | Job title as filed. |
-| job_title_clean | derived | text | Uppercase, punctuation to spaces, abbreviations expanded (SR→SENIOR, ENGR→ENGINEER, VP→VICE PRESIDENT …). |
+| job_title_clean | derived | text | Uppercase, punctuation to spaces, abbreviations expanded from the `TITLE_ABBREVIATIONS` mapping in `src/clean_lca.py` (BUSINESS INTEL→BUSINESS INTELLIGENCE, SR→SENIOR, ENGR/ENG/ENGG→ENGINEER, MGR→MANAGER, ANLST/ANALY→ANALYST, SCI→SCIENTIST, DEV→DEVELOPER (but BUS DEV→BUSINESS DEVELOPMENT), DIR→DIRECTOR, VP→VICE PRESIDENT, OPERATION RESEARCH→OPERATIONS RESEARCH …). |
 | job_title_base | derived | text | job_title_clean without seniority/level words (SENIOR, LEAD, PRINCIPAL, STAFF, II, 3, L5 …) or text in brackets. For "top sponsors for your title". |
 | soc_code | DOL | text | SOC occupation code as filed (sometimes malformed). |
 | soc_title | DOL | text | SOC occupation title as filed. |
@@ -43,6 +43,7 @@ An LCA is an employer filing, not an approved H-1B petition. Informational only,
 | soc_valid | derived | bool | soc_code could be parsed. Always true in the output. |
 | role_family | derived | text | Data Scientist, ML/AI Engineer, Data Engineer, Statistician/Quant, Data Analyst/BI. Rules in src/clean_lca.py (CORE_SOC_DEFAULT, GATED_SOC_PREFIXES, TITLE_RULES, TITLE_EXCLUSIONS). |
 | role_match_reason | derived | text | Why the row is a data role: `soc` (core SOC code, title gave no family), `soc+title` (core SOC and title rule), `title` (broad SOC code such as 15-1252, title rule matched). |
+| title_is_generic | derived | boolean | TRUE when the row is a data role only because of its core SOC code (`role_match_reason = 'soc'`) and its title is generic or clearly non-data (e.g. Associate, Vice President, Product Manager, Business Manager, Software Engineer). Rows are kept, not dropped; filter on this for title-level pages. Patterns: `GENERIC_TITLE_PATTERNS` in `src/clean_lca.py`. |
 | full_time_position | DOL | text | Y/N. |
 | begin_date | DOL | date | Employment start date on the LCA. |
 | end_date | DOL | date | Employment end date on the LCA. |

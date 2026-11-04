@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS public.lca_roles (
     soc_valid               boolean,
     role_family             text,
     role_match_reason       text,
+    title_is_generic        boolean,    -- core SOC row whose title has no data meaning
     full_time_position      text,
     begin_date              date,
     end_date                date,
@@ -68,3 +69,7 @@ CREATE INDEX IF NOT EXISTS ix_lca_roles_role_family      ON public.lca_roles (ro
 CREATE INDEX IF NOT EXISTS ix_lca_roles_worksite_state   ON public.lca_roles (worksite_state);
 CREATE INDEX IF NOT EXISTS ix_lca_roles_decision_fy      ON public.lca_roles (decision_fy);
 CREATE INDEX IF NOT EXISTS ix_lca_roles_is_certified_h1b ON public.lca_roles (is_certified_h1b);
+
+-- Added after the first load: tables created before this column existed get it
+-- here (safe to re-run). Filled on the next run of src/load_supabase.py.
+ALTER TABLE public.lca_roles ADD COLUMN IF NOT EXISTS title_is_generic boolean;

@@ -339,20 +339,59 @@ def standardize_employers(df: pd.DataFrame) -> pd.DataFrame:
 # 6. Job titles
 # ---------------------------------------------------------------------------
 
-_TITLE_ABBREV = [
-    (r"\bSR\b", "SENIOR"),
-    (r"\bJR\b", "JUNIOR"),
-    (r"\bMGR\b", "MANAGER"),
-    (r"\bENGR\b", "ENGINEER"),
-    (r"\bENG\b", "ENGINEER"),
-    (r"\bDEV\b", "DEVELOPMENT"),
-    (r"\bASSOC\b", "ASSOCIATE"),
-    (r"\bMGMT\b", "MANAGEMENT"),
-    (r"\bVP\b", "VICE PRESIDENT"),
-    (r"\bAVP\b", "ASSISTANT VICE PRESIDENT"),
+# Abbreviation expansions, applied in order to the upper-cased title after
+# punctuation is turned into spaces. Each pattern is a whole-word regex, so
+# 'SR' never touches 'SRE'. Order matters: multi-word and context rules
+# (e.g. BUS DEV, BUSINESS INTEL) come before the single-word ones.
+TITLE_ABBREVIATIONS: list[tuple[str, str]] = [
+    # multi-word / context-dependent first
+    (r"\bBUS(?:INESS)? INTEL(?:L|LIG)?\b", "BUSINESS INTELLIGENCE"),
+    (r"\bBUS(?:INESS)? INT\b", "BUSINESS INTELLIGENCE"),
+    (r"\bBUS(?:INESS)? INTE\b", "BUSINESS INTELLIGENCE"),
+    (r"\b(BUS(?:INESS)?|CORP(?:ORATE)?) DEV\b", r"\1 DEVELOPMENT"),
+    (r"\bPLAN / DEV\b", "PLAN / DEVELOPMENT"),
+    (r"\bDEV ?OPS\b", "DEVOPS"),
+    (r"\b(ML|AI|MACHINE LEARNING) OPS\b", "MLOPS"),
+    (r"\bOPS RESEARCH\b", "OPERATIONS RESEARCH"),
+    (r"\bOPERATION RESEARCH\b", "OPERATIONS RESEARCH"),
+    (r"\bDATA SCI\b", "DATA SCIENCE"),
+    (r"\bADV(?:ANCE)? ANAL(?:Y|YTICS)?\b", "ADVANCED ANALYTICS"),
     (r"\bA I\b", "AI"),
     (r"\bM L\b", "ML"),
+    # seniority
+    (r"\bSR\b", "SENIOR"),
+    (r"\bSNR\b", "SENIOR"),
+    (r"\bJR\b", "JUNIOR"),
+    (r"\bLD\b", "LEAD"),
+    (r"\bPRINC?\b", "PRINCIPAL"),
+    (r"\bASST\b", "ASSISTANT"),
+    (r"\bASSOC\b", "ASSOCIATE"),
+    (r"\bAVP\b", "ASSISTANT VICE PRESIDENT"),
+    (r"\bSVP\b", "SENIOR VICE PRESIDENT"),
+    (r"\bVP\b", "VICE PRESIDENT"),
+    (r"\bDIR\b", "DIRECTOR"),
+    # job nouns
+    (r"\bMN?GR\b", "MANAGER"),
+    (r"\bMNGR\b", "MANAGER"),
+    (r"\bMGMT\b", "MANAGEMENT"),
+    (r"\bMGT\b", "MANAGEMENT"),
+    (r"\b(?:ENGR|ENGG|ENGNR|ENG)\b", "ENGINEER"),
+    (r"\b(?:ANLST|ANALY|ANAL)\b", "ANALYST"),
+    (r"\b(?:SCI|SCNTST)\b", "SCIENTIST"),
+    (r"\b(?:DEV|DVLPR)\b", "DEVELOPER"),
+    (r"\bSPEC\b", "SPECIALIST"),
+    (r"\bARCH\b", "ARCHITECT"),
+    (r"\bCONSULT\b", "CONSULTANT"),
+    (r"\bSTATS\b", "STATISTICS"),
+    (r"\bBUS\b", "BUSINESS"),
+    (r"\bINFO\b", "INFORMATION"),
+    (r"\bSYS\b", "SYSTEMS"),
+    (r"\bPROG\b", "PROGRAM"),
+    (r"\bSOLNS?\b", "SOLUTIONS"),
+    (r"\bMKTG\b", "MARKETING"),
+    (r"\bADV\b", "ADVANCED"),
 ]
+_TITLE_ABBREV = TITLE_ABBREVIATIONS  # backward-compatible alias
 
 # Seniority / level words stripped to build job_title_base.
 _LEVEL_RE = re.compile(
@@ -371,7 +410,8 @@ def normalize_titles(df: pd.DataFrame) -> pd.DataFrame:
     t = t.str.replace("&", " AND ", regex=False)
     t = t.str.replace(r"[^\w\s/+]", " ", regex=True)  # keep '/' (AI/ML) and '+'
     t = t.str.replace("/", " / ", regex=False)
-    for pat, rep in _TITLE_ABBREV:
+    t = t.str.replace(r"\s+", " ", regex=True).str.strip()
+    for pat, rep in TITLE_ABBREVIATIONS:
         t = t.str.replace(pat, rep, regex=True)
     t = t.str.replace(r"\s+", " ", regex=True).str.strip()
     out["job_title_clean"] = t
@@ -432,6 +472,20 @@ TITLE_EXCLUSIONS = (
     r"\bDATA ENTRY\b|\bDATABASE ADMIN|\bDBA\b|\bDATA CENT(?:ER|RE)\b|\bDATACENTER\b|"
     r"\bANALYTICAL (?:CHEMIST|CHEMISTRY|SCIENTIST|SCIENCES?|DEVELOPMENT|LAB|METHOD)|"
     r"\bCLINICAL DATA (?:MANAGER|COORDINATOR|ASSOCIATE)"
+)
+
+# Titles that carry no data meaning on their own. A row with a core data SOC
+# code is still kept as a data role (the employer told DOL it is one), but if
+# its title has no data keyword AND matches this list it gets
+# title_is_generic = TRUE so dashboards can filter it out (e.g. on the
+# "Top sponsors for your title" page). Rows are flagged, never dropped.
+GENERIC_TITLE_PATTERNS = (
+    r"^(?:(?:SENIOR|JUNIOR|LEAD|PRINCIPAL|STAFF|ASSOCIATE) )*(?:ASSOCIATE|ANALYST|CONSULTANT|MANAGER|DIRECTOR|ENGINEER|SCIENTIST|"
+    r"RESEARCH|SPECIALIST|ADVISOR|PARTNER|PRINCIPAL|MEMBER OF TECHNICAL(?: STAFF)?|"
+    r"(?:SENIOR |ASSISTANT |EXECUTIVE )?VICE PRESIDENT|OFFICER)$|"
+    r"\bPRODUCT MANAGE|\bBUSINESS MANAGER\b|\bPROGRAM MANAGE|\bPROJECT MANAGE|"
+    r"\bSOFTWARE (?:ENGINEER|DEVELOPER)\b|\bTRADER\b|\bFINANCIAL ANALYST\b|"
+    r"\bSTRATEGY AND OPERATIONS\b|\bBUSINESS DEVELOPER\b|\bDEPLOYMENT STRATEGIST\b"
 )
 
 # SOC codes that ARE data roles. The family is taken from the title when a
@@ -519,6 +573,9 @@ def classify_roles(df: pd.DataFrame) -> pd.DataFrame:
 
     out["role_family"] = family
     out["role_match_reason"] = reason
+    base = out["job_title_base"].fillna("") if "job_title_base" in out else t
+    generic = base.str.contains(GENERIC_TITLE_PATTERNS, regex=True).fillna(False)
+    out["title_is_generic"] = core_only & generic
     out["is_data_role"] = family.ne(OTHER)
     out.attrs = dict(df.attrs)
     return out
@@ -536,7 +593,7 @@ OUTPUT_COLUMNS = [
     "TRADE_NAME_DBA", "EMPLOYER_CITY", "EMPLOYER_STATE", "NAICS_CODE",
     "JOB_TITLE", "job_title_clean", "job_title_base",
     "SOC_CODE", "SOC_TITLE", "soc_6", "soc_8", "soc_valid",
-    "role_family", "role_match_reason",
+    "role_family", "role_match_reason", "title_is_generic",
     "FULL_TIME_POSITION", "BEGIN_DATE", "END_DATE", "TOTAL_WORKER_POSITIONS",
     "NEW_EMPLOYMENT", "CONTINUED_EMPLOYMENT", "CHANGE_EMPLOYER",
     "WORKSITE_CITY", "WORKSITE_COUNTY", "WORKSITE_STATE", "WORKSITE_POSTAL_CODE",
