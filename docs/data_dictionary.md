@@ -23,7 +23,7 @@ An LCA is an employer filing, not an approved H-1B petition. Informational only,
 | decision_fq | derived | int | Fiscal quarter of decision_date (Q1 = Oct–Dec … Q4 = Jul–Sep). |
 | source_file | derived | text | DOL file the row came from. |
 | source_fy | derived | int | Fiscal year in the file name. |
-| source_quarter | derived | int | Quarter in the file name. DOL files are cumulative within a fiscal year. |
+| source_quarter | derived | int | Quarter in the file name. DOL files are not consistently cumulative (FY2026_Q3 covers Oct–Jun; FY2024_Q4/FY2025_Q4 cover only Jul–Sep). When combining files, each case_number keeps the row from the newest source file. |
 | employer_name | DOL | text | Employer legal name as filed. |
 | employer_name_clean | derived | text | Uppercase, '&' to AND, punctuation removed, leading THE and trailing legal forms (INC, LLC, CORP, CO, LTD, LP, LLP, NA …) removed. |
 | employer_name_std | derived | text | One name per FEIN: the most common employer_name_clean filed under that FEIN. Use this for employer rankings. |

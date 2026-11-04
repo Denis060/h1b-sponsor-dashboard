@@ -644,10 +644,28 @@ def run_pipeline(xlsx_path: str | Path, out_dir: str | Path, cache_dir: str | Pa
     return out
 
 
-# Note on combining quarters: DOL's quarterly files for one fiscal year are
-# cumulative (the Q3 file covers Oct 1 - Jun 30). When stacking several files,
-# drop duplicate case_number values and keep the row from the latest file.
+# Note on combining quarters: DOL files are NOT consistently cumulative. Some
+# cover the fiscal year to date (FY2026_Q3 = Oct 1 - Jun 30), others only their
+# own quarter (FY2024_Q4 and FY2025_Q4 = Jul 1 - Sep 30). So we union every file
+# and, where a case_number appears more than once, keep the row from the most
+# recent source file (highest fiscal year, then quarter). This is correct either way.
 def combine_quarters(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """Union cleaned quarter frames; dedupe case_number keeping the newest source file's row."""
+    frames = [f for f in frames if f is not None and len(f)]
+    if not frames:
+        return pd.DataFrame()
     allq = pd.concat(frames, ignore_index=True)
-    allq = allq.sort_values(["source_fy", "source_quarter"])
+    if "source_file" not in allq.columns:
+        allq["source_file"] = None
+    for c in ("source_fy", "source_quarter"):
+        if c not in allq.columns:
+            allq[c] = None
+    # Fill missing period columns from the file name where possible.
+    parsed = allq["source_file"].map(lambda f: parse_file_period(f) if isinstance(f, str) else (None, None))
+    allq["source_fy"] = pd.to_numeric(allq["source_fy"], errors="coerce").fillna(parsed.str[0])
+    allq["source_quarter"] = pd.to_numeric(allq["source_quarter"], errors="coerce").fillna(parsed.str[1])
+    allq["source_fy"] = pd.to_numeric(allq["source_fy"], errors="coerce").astype("Int64")
+    allq["source_quarter"] = pd.to_numeric(allq["source_quarter"], errors="coerce").astype("Int64")
+    # Stable sort, unknown periods first, so the newest file's row is last for each case.
+    allq = allq.sort_values(["source_fy", "source_quarter"], na_position="first", kind="mergesort")
     return allq.drop_duplicates("case_number", keep="last").reset_index(drop=True)

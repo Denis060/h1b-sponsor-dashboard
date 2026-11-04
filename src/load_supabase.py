@@ -6,8 +6,10 @@ Usage (from the repo root, inside .venv):
 
 Reads SUPABASE_DB_URL from .env, creates the table from sql/schema/01_lca_roles.sql if missing,
 then upserts on case_number in chunks. Re-running the same file writes nothing (only changed rows
-are updated), so the load is idempotent. Later quarters of the same fiscal year overwrite earlier rows,
-because DOL files are cumulative within a fiscal year.
+are updated), so the load is idempotent. All files are combined first with clean_lca.combine_quarters
+(union, then one row per case_number from the most recent source file by fiscal year/quarter), because DOL
+files are not consistently cumulative. In the database, an existing row is only overwritten by a row from
+the same or a newer source file, so loading an older file later can't clobber newer data.
 """
 from __future__ import annotations
 
@@ -21,6 +23,8 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from clean_lca import combine_quarters  # noqa: E402
 SCHEMA_SQL = ROOT / "sql" / "schema" / "01_lca_roles.sql"
 TABLE = "lca_roles"
 CHUNK_ROWS = 10_000
@@ -88,7 +92,9 @@ def upsert(raw_conn, df: pd.DataFrame, cols: list[str]) -> None:
             cur.execute(
                 f"INSERT INTO public.{TABLE} ({col_list}) SELECT {col_list} FROM _stage "
                 f"ON CONFLICT (case_number) DO UPDATE SET {updates}, loaded_at = now() "
-                f"WHERE ({tgt_list}) IS DISTINCT FROM ({exc_list})")
+                f"WHERE ({tgt_list}) IS DISTINCT FROM ({exc_list}) "
+                f"AND (EXCLUDED.source_fy, EXCLUDED.source_quarter) >= "
+                f"(COALESCE({TABLE}.source_fy, 0), COALESCE({TABLE}.source_quarter, 0))")
             print(f"  upserted rows {start + 1:,}-{start + len(chunk):,}")
     raw_conn.commit()
 
@@ -104,17 +110,22 @@ def main(paths: list[str]) -> None:
         cols = table_columns(conn)
     print(f"Rows in {TABLE} before: {before:,}")
 
+    frames = []
     for f in files:
-        df = prepare(pd.read_parquet(f), cols)
-        print(f"{f.name}: {len(df):,} rows")
-        raw = engine.raw_connection()
-        try:
-            upsert(raw, df, cols)
-        except Exception:
-            raw.rollback()
-            raise
-        finally:
-            raw.close()
+        part = pd.read_parquet(f)
+        print(f"{f.name}: {len(part):,} rows")
+        frames.append(part)
+    combined = combine_quarters(frames)
+    print(f"Combined: {sum(map(len, frames)):,} rows -> {len(combined):,} unique case_number")
+    df = prepare(combined, cols)
+    raw = engine.raw_connection()
+    try:
+        upsert(raw, df, cols)
+    except Exception:
+        raw.rollback()
+        raise
+    finally:
+        raw.close()
 
     with engine.connect() as conn:
         after = conn.execute(text(f"SELECT count(*) FROM public.{TABLE}")).scalar()
